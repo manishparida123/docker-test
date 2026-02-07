@@ -1,0 +1,76 @@
+services:
+  postgres:
+    image: postgres:15-alpine
+    container_name: task-postgres
+    environment:
+      POSTGRES_DB: taskdb
+      POSTGRES_USER: taskuser
+      POSTGRES_PASSWORD: taskpass
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./database/init-scripts:/docker-entrypoint-initdb.d
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U taskuser -d taskdb"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - task-network
+
+  redis:
+    image: redis:7-alpine
+    container_name: task-redis
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - task-network
+
+  backend:
+    build:
+      context: ./backend
+    container_name: task-backend
+    ports:
+      - "3000:3000"
+    environment:
+      DB_HOST: postgres
+      DB_USER: taskuser
+      DB_PASSWORD: taskpass
+      DB_NAME: taskdb
+      REDIS_HOST: redis
+      NODE_ENV: development
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - task-network
+    restart: unless-stopped
+
+  frontend:
+    build:
+      context: ./frontend
+    container_name: task-frontend
+    ports:
+      - "80:80"
+    environment:
+      REACT_APP_API_URL: http://backend:3000
+    depends_on:
+      - backend
+    networks:
+      - task-network
+    restart: unless-stopped
+
+networks:
+  task-network:
+    driver: bridge
+
+volumes:
+  postgres_data:
